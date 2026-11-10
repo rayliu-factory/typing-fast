@@ -1,0 +1,1672 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LETTER INVADERS // Cyber Softkey Edition</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: JetBrains Mono & Orbitron -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-cyan: #00f3ff;
+            --neon-magenta: #ff007f;
+            --neon-amber: #ffbe0b;
+            --neon-green: #00ff9d;
+            --neon-red: #ff2a54;
+            --bg-deep: #070812;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            background-color: var(--bg-deep);
+            color: #e2e8f0;
+            font-family: 'JetBrains Mono', monospace;
+            touch-action: manipulation;
+        }
+
+        .font-display {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* Subtle CRT Scanline & Vignette overlay */
+        .crt-overlay {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), radial-gradient(
+                circle at center,
+                transparent 60%,
+                rgba(4, 5, 12, 0.75) 100%
+            );
+            background-size: 100% 4px, 100% 100%;
+            pointer-events: none;
+        }
+
+        /* Softkey Styling */
+        .softkey {
+            position: relative;
+            transition: transform 0.05s ease, background-color 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+            box-shadow: 0 3px 0 rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            touch-action: none;
+        }
+
+        .softkey:active, .softkey.key-active {
+            transform: translateY(2px) scale(0.96);
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.65);
+        }
+
+        /* Left vs Right Thumb Zone Tints */
+        .thumb-left {
+            background: linear-gradient(180deg, rgba(14, 38, 68, 0.85) 0%, rgba(10, 24, 46, 0.92) 100%);
+            border-color: rgba(0, 243, 255, 0.3);
+        }
+        .thumb-right {
+            background: linear-gradient(180deg, rgba(58, 16, 56, 0.85) 0%, rgba(36, 11, 40, 0.92) 100%);
+            border-color: rgba(255, 0, 127, 0.3);
+        }
+        .thumb-neutral {
+            background: linear-gradient(180deg, rgba(28, 33, 53, 0.9) 0%, rgba(18, 22, 38, 0.95) 100%);
+            border-color: rgba(148, 163, 184, 0.25);
+        }
+
+        /* Ghost Hint Pulse */
+        @keyframes ghostPulse {
+            0%, 100% {
+                box-shadow: 0 0 12px #00ff9d, inset 0 0 10px rgba(0, 255, 157, 0.45);
+                border-color: #00ff9d !important;
+                transform: scale(1.03);
+            }
+            50% {
+                box-shadow: 0 0 22px #00ff9d, inset 0 0 16px rgba(0, 255, 157, 0.75);
+                border-color: #ffffff !important;
+                transform: scale(1.06);
+            }
+        }
+
+        .key-ghost-hint {
+            animation: ghostPulse 0.8s infinite ease-in-out;
+            z-index: 10;
+        }
+
+        /* Mistype Error Flash */
+        .key-error-flash {
+            background: linear-gradient(180deg, #ff2a54 0%, #990f2b 100%) !important;
+            border-color: #ffffff !important;
+            box-shadow: 0 0 20px #ff2a54 !important;
+        }
+
+        /* Intended Key Flash on Mistype */
+        .key-intended-flash {
+            border-color: #ffbe0b !important;
+            box-shadow: 0 0 18px #ffbe0b, inset 0 0 12px rgba(255, 190, 11, 0.5) !important;
+        }
+
+        /* Key Hit Success Glow */
+        .key-hit-glow {
+            background: linear-gradient(180deg, rgba(0, 243, 255, 0.65) 0%, rgba(0, 150, 255, 0.4) 100%) !important;
+            border-color: #fff !important;
+            box-shadow: 0 0 16px #00f3ff !important;
+        }
+
+        /* Pop-up Key Preview Bubble (Mobile Softkey style) */
+        .key-popup {
+            position: absolute;
+            bottom: 112%;
+            left: 50%;
+            transform: translateX(-50%) scale(0.8);
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 0.06s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.06s ease;
+            z-index: 40;
+        }
+        .softkey.key-active .key-popup {
+            transform: translateX(-50%) scale(1);
+            opacity: 1;
+        }
+
+        /* Screen Shake for Shield Jam / Damage */
+        @keyframes shakeScreen {
+            0%, 100% { transform: translate(0, 0); }
+            20% { transform: translate(-5px, 3px); }
+            40% { transform: translate(5px, -3px); }
+            60% { transform: translate(-4px, -2px); }
+            80% { transform: translate(4px, 2px); }
+        }
+        .shake-anim {
+            animation: shakeScreen 0.22s ease-in-out;
+        }
+
+        /* Glowing Text Helpers */
+        .glow-cyan {
+            text-shadow: 0 0 8px rgba(0, 243, 255, 0.75);
+        }
+        .glow-magenta {
+            text-shadow: 0 0 8px rgba(255, 0, 127, 0.75);
+        }
+        .glow-amber {
+            text-shadow: 0 0 8px rgba(255, 190, 11, 0.8);
+        }
+    </style>
+</head>
+<body class="flex flex-col justify-between h-[100dvh] w-full overflow-hidden select-none bg-[#070812]">
+
+    <!-- TOP NAVIGATION & TELEMETRY BAR (Fixed Compact Height) -->
+    <header class="w-full bg-[#0b0d1e]/95 border-b border-cyan-500/30 px-2 sm:px-4 py-1.5 flex items-center justify-between gap-2 z-30 shrink-0">
+        <!-- Brand & Mode Selector -->
+        <div class="flex items-center gap-2 sm:gap-3">
+            <div class="flex items-center gap-1.5">
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f3ff]"></span>
+                <h1 class="font-display text-xs sm:text-sm md:text-base font-extrabold tracking-wider text-cyan-300 glow-cyan whitespace-nowrap">
+                    LETTER INVADERS <span class="hidden md:inline text-[10px] text-fuchsia-400 font-mono bg-fuchsia-950/60 border border-fuchsia-500/40 px-1.5 py-0.5 rounded ml-1">SOFTKEY OS v4.0</span>
+                </h1>
+            </div>
+
+            <!-- Training Mode Dropdown -->
+            <select id="modeSelect" aria-label="Training Mode" class="bg-slate-900/90 text-cyan-200 text-[11px] sm:text-xs font-semibold border border-cyan-500/40 rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-400 cursor-pointer">
+                <option value="thumb">Mode 1: L/R Thumb Rhythm</option>
+                <option value="classic">Mode 2: Classic Arcade Waves</option>
+                <option value="layers">Mode 3: ?123 Layer Switch Drills</option>
+            </select>
+        </div>
+
+        <!-- Live Stats Strip -->
+        <div class="flex items-center gap-2 sm:gap-4 text-xs">
+            <div class="flex flex-col items-end">
+                <span class="text-[9px] uppercase tracking-wider text-slate-400">Score</span>
+                <span id="scoreDisplay" class="font-display font-bold text-cyan-300 text-xs sm:text-sm">00000</span>
+            </div>
+            <div class="hidden sm:flex flex-col items-end">
+                <span class="text-[9px] uppercase tracking-wider text-slate-400">Wave</span>
+                <span id="waveDisplay" class="font-display font-bold text-fuchsia-400 text-xs sm:text-sm">01</span>
+            </div>
+            <div class="flex flex-col items-end">
+                <span class="text-[9px] uppercase tracking-wider text-slate-400">WPM / Acc</span>
+                <span id="wpmDisplay" class="font-mono font-bold text-emerald-400 text-xs sm:text-sm">0 <span class="text-slate-400 text-[10px]">100%</span></span>
+            </div>
+        </div>
+
+        <!-- Utility Controls: Ghost Hints, Audio, Pause/Help -->
+        <div class="flex items-center gap-1 sm:gap-1.5">
+            <button id="ghostToggleBtn" title="Toggle Ghost Key Hints below 50% danger line" class="px-2 py-1 rounded-lg text-[10px] sm:text-xs font-semibold border border-emerald-500/50 bg-emerald-950/50 text-emerald-300 hover:bg-emerald-900/60 transition flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400" id="ghostDot"></span>
+                <span class="hidden sm:inline">Hints:</span><span id="ghostStatusText">ON</span>
+            </button>
+
+            <button id="soundToggleBtn" title="Toggle Synth Audio" class="p-1.5 rounded-lg border border-cyan-500/30 bg-slate-900/70 text-cyan-300 hover:bg-slate-800 transition text-xs">
+                <span id="soundIcon">🔊</span>
+            </button>
+
+            <button id="pauseBtn" title="Pause / Drills Menu" class="px-2 py-1 rounded-lg border border-fuchsia-500/40 bg-fuchsia-950/40 text-fuchsia-300 hover:bg-fuchsia-900/60 transition text-[11px] sm:text-xs font-bold">
+                ⏸
+            </button>
+        </div>
+    </header>
+
+    <!-- UPPER 56% VIEWPORT: COMBAT SKY & DESTRUCTIBLE NEON SKYLINE -->
+    <main id="combatViewport" class="relative w-full flex-grow overflow-hidden bg-[#060711]">
+        <!-- Interactive HTML5 Canvas for Falling Rain, UFO Marquee, Lasers, Particles & Skyline -->
+        <canvas id="gameCanvas" class="block w-full h-full"></canvas>
+
+        <!-- Danger Line Indicator (50% Vertical Threshold for Ghost Hints) -->
+        <div id="dangerLine" class="pointer-events-none absolute left-0 right-0 top-[52%] border-b border-dashed border-rose-500/20 flex justify-end pr-2">
+            <span class="text-[9px] uppercase tracking-widest text-rose-400/40 -mt-3.5">50% Ghost Assist Zone</span>
+        </div>
+
+        <!-- Floating UFO / Bonus Marquee Alert Banner -->
+        <div id="ufoAlertBanner" class="hidden pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 bg-amber-500/15 border border-amber-400/60 backdrop-blur-sm px-3 py-0.5 rounded-full flex items-center gap-2 shadow-[0_0_15px_rgba(255,190,11,0.35)]">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+            <span class="text-[10px] sm:text-xs font-display tracking-wider text-amber-300 font-bold uppercase">UFO MARQUEE BONUS INBOUND // SHIELD REPAIR</span>
+        </div>
+
+        <!-- Shield Jam / Typo Feedback Toast -->
+        <div id="jamToast" class="opacity-0 transition-opacity duration-150 pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 bg-rose-950/90 border border-rose-500 px-3 py-1 rounded-lg text-xs text-rose-200 font-bold shadow-[0_0_20px_rgba(255,42,84,0.6)] flex items-center gap-2 z-20">
+            <span>⚠️ SHIELD JAM!</span>
+            <span id="jamDetail" class="text-amber-300 font-mono">Tapped [O] → Needed [I]</span>
+        </div>
+
+        <!-- Start / Pause / Game Over Modal Overlay -->
+        <div id="modalOverlay" class="absolute inset-0 bg-[#05060f]/85 backdrop-blur-md flex items-center justify-center p-4 z-40">
+            <div class="max-w-md w-full bg-[#0d1024] border-2 border-cyan-400/50 rounded-2xl p-5 sm:p-6 shadow-[0_0_40px_rgba(0,243,255,0.2)] text-center relative overflow-hidden">
+                <!-- Decorative top neon bar -->
+                <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-amber-400"></div>
+
+                <div class="inline-block px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-[10px] font-bold tracking-widest uppercase mb-2">
+                    1987 Kriya Systems Tribute
+                </div>
+                <h2 id="modalTitle" class="font-display text-2xl sm:text-3xl font-black text-white tracking-wider glow-cyan mb-2">
+                    LETTER INVADERS
+                </h2>
+                <p id="modalSubtitle" class="text-xs sm:text-sm text-slate-300 mb-4 leading-relaxed">
+                    Defend your 6 Neon City Domes from falling word rain and horizontal UFO marquees. Engineered for <span class="text-cyan-300 font-semibold">two-thumb softkey rhythm</span> &amp; physical keyboards.
+                </p>
+
+                <!-- Ergonomic Feature Pills -->
+                <div class="grid grid-cols-3 gap-2 mb-5 text-left">
+                    <div class="bg-slate-900/90 border border-cyan-500/30 rounded-xl p-2.5">
+                        <div class="text-cyan-400 text-xs font-bold mb-0.5">🟦 Left / 🟪 Right</div>
+                        <p class="text-[10px] text-slate-400 leading-tight">Color-coded thumb zones train alternating rhythm.</p>
+                    </div>
+                    <div class="bg-slate-900/90 border border-amber-500/30 rounded-xl p-2.5">
+                        <div class="text-amber-400 text-xs font-bold mb-0.5">🛸 ?123 UFOs</div>
+                        <p class="text-[10px] text-slate-400 leading-tight">Horizontal marquees train fast symbol/number switching.</p>
+                    </div>
+                    <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-2.5">
+                        <div class="text-emerald-400 text-xs font-bold mb-0.5">🎯 Peripheral HUD</div>
+                        <p class="text-[10px] text-slate-400 leading-tight">Locked target bar sits right above the keys for thumb vision.</p>
+                    </div>
+                </div>
+
+                <!-- End-of-game stats (Hidden initially) -->
+                <div id="finalStatsBox" class="hidden bg-slate-950/80 border border-slate-800 rounded-xl p-3 mb-4 grid grid-cols-3 gap-2">
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase">Final Score</div>
+                        <div id="finalScore" class="font-display text-lg font-bold text-cyan-300">0</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase">Peak WPM</div>
+                        <div id="finalWpm" class="font-display text-lg font-bold text-emerald-400">0</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase">Accuracy</div>
+                        <div id="finalAcc" class="font-display text-lg font-bold text-fuchsia-400">100%</div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-2.5 justify-center">
+                    <button id="startGameBtn" class="w-full py-3 px-6 rounded-xl font-display font-bold text-sm sm:text-base tracking-wider uppercase bg-gradient-to-r from-cyan-500 to-fuchsia-600 text-white shadow-[0_0_20px_rgba(0,243,255,0.4)] hover:brightness-110 active:scale-98 transition">
+                        Launch Defense Grid
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- PERIPHERAL TARGET LOCK HUD BAR (Sits directly above Soft Keypad boundary) -->
+    <section aria-label="Target Lock HUD" class="w-full bg-[#0e1229] border-t-2 border-b border-cyan-400/50 px-2.5 sm:px-4 py-1.5 flex items-center justify-between gap-2 z-30 shrink-0 shadow-[0_-4px_20px_rgba(0,243,255,0.12)]">
+        <!-- Left: Active Locked Word Display for Peripheral Vision -->
+        <div class="flex items-center gap-2 min-w-0 flex-1">
+            <div id="lockBadge" class="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-display font-bold uppercase tracking-wider bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
+                SCANNING
+            </div>
+            <div id="hudLockedWord" class="font-mono text-sm sm:text-lg font-extrabold tracking-widest truncate flex items-center gap-0.5">
+                <span class="text-slate-500 text-xs sm:text-sm font-normal italic">Type any falling first letter...</span>
+            </div>
+        </div>
+
+        <!-- Center: Next Key & Thumb Hand Indicator -->
+        <div class="flex items-center gap-2 shrink-0">
+            <div id="thumbIndicator" class="px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-bold border border-slate-700 bg-slate-900/90 text-slate-400 flex items-center gap-1.5">
+                <span id="thumbArrow">👐</span>
+                <span id="thumbText">READY</span>
+            </div>
+        </div>
+
+        <!-- Right: Combo Multiplier & L/R Rhythm Balance -->
+        <div class="flex items-center gap-2.5 shrink-0">
+            <div class="hidden md:flex items-center gap-1 text-[10px] text-slate-400">
+                <span class="text-cyan-400 font-bold">L</span>
+                <div class="w-16 h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                    <div id="leftThumbBar" class="bg-cyan-400 h-full transition-all duration-200" style="width: 50%"></div>
+                    <div id="rightThumbBar" class="bg-fuchsia-500 h-full transition-all duration-200" style="width: 50%"></div>
+                </div>
+                <span class="text-fuchsia-400 font-bold">R</span>
+            </div>
+
+            <div id="comboBadge" class="px-2 py-0.5 rounded-lg bg-fuchsia-950/80 border border-fuchsia-500/40 text-fuchsia-300 font-display font-bold text-xs sm:text-sm">
+                1x <span class="text-[9px] font-sans font-normal text-fuchsia-400">COMBO</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- LOWER 42% VIEWPORT: CUSTOM INTERACTIVE ON-SCREEN SOFT KEYPAD -->
+    <section id="softKeyboardContainer" aria-label="On-Screen Soft Keypad" class="w-full h-[38dvh] sm:h-[40dvh] max-h-[310px] min-h-[210px] bg-[#080a17] px-1 sm:px-3 py-1.5 sm:py-2.5 flex flex-col justify-between gap-1.5 sm:gap-2 z-30 shrink-0 select-none">
+        <!-- Thumb Zone Legend Strip -->
+        <div class="w-full max-w-4xl mx-auto flex justify-between items-center px-2 text-[9px] sm:text-[10px] tracking-wider uppercase font-semibold text-slate-400">
+            <span class="text-cyan-400/80 flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-cyan-400/60 inline-block"></span> Left Thumb Zone (Q-G)</span>
+            <span id="layerIndicatorText" class="text-amber-300/90 font-mono">LAYER: ABC (QWERTY)</span>
+            <span class="text-fuchsia-400/80 flex items-center gap-1">Right Thumb Zone (Y-P) <span class="w-2 h-2 rounded-sm bg-fuchsia-400/60 inline-block"></span></span>
+        </div>
+
+        <!-- Dynamic Keyboard Rows Container -->
+        <div id="keyboardRows" class="w-full max-w-4xl mx-auto flex-1 flex flex-col justify-between gap-1.5 sm:gap-2">
+            <!-- Populated dynamically via JS for instant ABC <-> ?123 switching -->
+        </div>
+    </section>
+
+    <!-- CRT Scanline Aesthetic Overlay -->
+    <div class="crt-overlay fixed inset-0 z-50"></div>
+
+    <script>
+        /********************************************************************
+         * 1. SYNTHESIZED WEB AUDIO API SOUND ENGINE & HAPTICS
+         ********************************************************************/
+        class CyberAudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            vibrate(ms = 15) {
+                if (navigator.vibrate) {
+                    try { navigator.vibrate(ms); } catch (e) {}
+                }
+            }
+
+            playLaserKey(combo = 1, isUfo = false) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                // Pitch scales up with combo streak for musical typing feedback
+                const baseFreq = isUfo ? 580 : 320 + Math.min(combo * 18, 420);
+                osc.type = isUfo ? 'triangle' : 'sawtooth';
+                osc.frequency.setValueAtTime(baseFreq, now);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.65, now + 0.085);
+
+                gain.gain.setValueAtTime(0.14, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.095);
+            }
+
+            playWordDestroy(isUfo = false) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const notes = isUfo ? [523.25, 659.25, 783.99, 1046.5] : [440, 554.37, 659.25];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.045);
+
+                    gain.gain.setValueAtTime(0.16, now + idx * 0.045);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.045 + 0.18);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.045);
+                    osc.stop(now + idx * 0.045 + 0.19);
+                });
+            }
+
+            playMistypeJam() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.linearRampToValueAtTime(95, now + 0.16);
+
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.19);
+            }
+
+            playDomeHit() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(110, now);
+                osc.frequency.exponentialRampToValueAtTime(38, now + 0.35);
+
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.37);
+            }
+        }
+
+        const audio = new CyberAudioEngine();
+
+        /********************************************************************
+         * 2. WORD DICTIONARIES & ERGONOMIC TRAINING DATASETS
+         ********************************************************************/
+        const LEFT_THUMB_KEYS = new Set(['q','w','e','r','t','a','s','d','f','g','z','x','c','v','b','1','2','3','4','5','!','@','#','$','%']);
+        const RIGHT_THUMB_KEYS = new Set(['y','u','i','o','p','h','j','k','l','n','m','6','7','8','9','0','^','&','*','(',')','-','/','?']);
+
+        const WORD_BANKS = {
+            // Words engineered for strong Left-Right thumb alternation on QWERTY
+            thumb: [
+                'city', 'dock', 'turf', 'work', 'form', 'rush', 'disk', 'clay', 'visp', 'turn',
+                'fork', 'slam', 'girl', 'burn', 'rich', 'chap', 'worn', 'duck', 'film', 'rock',
+                'spit', 'land', 'wish', 'bold', 'kept', 'mend', 'sign', 'fuel', 'path', 'glow',
+                'cyber', 'laser', 'touch', 'thumb', 'pulse', 'panel', 'power', 'logic', 'focus', 'world'
+            ],
+            // Classic progressive arcade waves
+            classicShort: [
+                'dos', 'ram', 'cpu', 'bit', 'hex', 'key', 'rom', 'net', 'web', 'app',
+                'sky', 'zen', 'orb', 'ion', 'jet', 'ray', 'arc', 'bot', 'syn', 'led'
+            ],
+            classicMedium: [
+                'matrix', 'vector', 'arcade', 'cursor', 'syntax', 'memory', 'buffer', 'system',
+                'shield', 'bunker', 'invade', 'typing', 'qwerty', 'stream', 'screen', 'packet',
+                'modern', 'future', 'signal', 'keypad'
+            ],
+            classicLong: [
+                'mainframe', 'terminal', 'cybernetic', 'bandwidth', 'algorithm', 'processor',
+                'interface', 'hypertext', 'assembler', 'telemetry', 'wavelength', 'simulation'
+            ],
+            // ?123 Layer Switching Drills (Numbers & Symbols)
+            layers: [
+                '404!', '@dev', '#99', '2026', 'v4.0', '100%', '$50', '8bit', '24/7', 'ping-1',
+                'rx-7', 'os/2', 'c#10', '99.9', '#1st', 'ai@2', '50hz', '64kb', '3d!', 'x-86'
+            ],
+            // Horizontal UFO Bonus Marquee Targets
+            ufoBonus: [
+                '@bonus', '#shield', '1987!', '10x-up', 'repair!', '2048k', '$jackpot', 'dos-4.0'
+            ]
+        };
+
+        /********************************************************************
+         * 3. ON-SCREEN SOFT KEYPAD LAYOUT & RENDERER
+         ********************************************************************/
+        const KEY_LAYOUTS = {
+            abc: [
+                ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+                ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+                ['?123', 'z', 'x', 'c', 'v', 'b', 'n', 'm', '⌫'],
+                ['MODE', 'SPACE', 'LOCK NEXT']
+            ],
+            sym: [
+                ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+                ['@', '#', '$', '%', '&', '-', '+', '(', ')', '/'],
+                ['ABC', '!', '"', '\'', ':', ';', '?', '.', '⌫'],
+                ['MODE', 'SPACE', 'LOCK NEXT']
+            ]
+        };
+
+        let currentKeyLayer = 'abc';
+        const keyDomMap = new Map(); // char -> DOM element for laser origin & ghost hints
+
+        function getThumbZone(keyChar) {
+            const k = keyChar.toLowerCase();
+            if (LEFT_THUMB_KEYS.has(k)) return 'left';
+            if (RIGHT_THUMB_KEYS.has(k)) return 'right';
+            return 'neutral';
+        }
+
+        function renderSoftKeyboard() {
+            const container = document.getElementById('keyboardRows');
+            container.innerHTML = '';
+            keyDomMap.clear();
+
+            const rows = KEY_LAYOUTS[currentKeyLayer];
+            document.getElementById('layerIndicatorText').textContent =
+                currentKeyLayer === 'abc' ? 'LAYER: ABC (QWERTY)' : 'LAYER: ?123 (NUMBERS & SYMBOLS)';
+
+            rows.forEach((row, rowIndex) => {
+                const rowEl = document.createElement('div');
+                rowEl.className = 'flex justify-center items-stretch gap-1 sm:gap-1.5 flex-1 w-full';
+                if (rowIndex === 1 && currentKeyLayer === 'abc') {
+                    rowEl.classList.add('px-2', 'sm:px-5'); // Slight ASDF row indentation
+                }
+
+                row.forEach(keyLabel => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    const lower = keyLabel.toLowerCase();
+                    const zone = getThumbZone(lower);
+
+                    // Determine width & styling
+                    let widthClass = 'flex-1 max-w-[9.5%]';
+                    let zoneClass = zone === 'left' ? 'thumb-left text-cyan-100' :
+                                    zone === 'right' ? 'thumb-right text-fuchsia-100' :
+                                    'thumb-neutral text-slate-200';
+
+                    if (keyLabel === '?123' || keyLabel === 'ABC') {
+                        widthClass = 'flex-[1.45] max-w-[14%]';
+                        zoneClass = 'bg-amber-950/80 border-amber-400/60 text-amber-300 font-bold';
+                    } else if (keyLabel === '⌫') {
+                        widthClass = 'flex-[1.3] max-w-[13%]';
+                        zoneClass = 'thumb-neutral text-rose-300';
+                    } else if (keyLabel === 'SPACE') {
+                        widthClass = 'flex-[4] max-w-[46%]';
+                        zoneClass = 'thumb-neutral text-cyan-300/80 text-xs tracking-widest';
+                    } else if (keyLabel === 'MODE' || keyLabel === 'LOCK NEXT') {
+                        widthClass = 'flex-[1.5] max-w-[22%]';
+                        zoneClass = 'thumb-neutral text-slate-300 text-[10px] sm:text-xs font-bold';
+                    }
+
+                    btn.className = `softkey ${widthClass} ${zoneClass} border rounded-lg sm:rounded-xl flex flex-col items-center justify-center font-mono font-bold text-sm sm:text-base md:text-lg select-none relative`;
+                    btn.dataset.key = keyLabel;
+
+                    // Floating Key-Pop Preview Bubble for character keys
+                    if (keyLabel.length === 1) {
+                        const popup = document.createElement('div');
+                        popup.className = 'key-popup bg-cyan-400 text-slate-950 font-display font-black text-base sm:text-lg px-2.5 py-1 rounded-lg shadow-[0_0_15px_#00f3ff]';
+                        popup.textContent = keyLabel.toUpperCase();
+                        btn.appendChild(popup);
+
+                        // Subtle L/R dot indicator on keycap
+                        const labelSpan = document.createElement('span');
+                        labelSpan.textContent = keyLabel.toUpperCase();
+                        btn.appendChild(labelSpan);
+
+                        keyDomMap.set(lower, btn);
+                    } else {
+                        const span = document.createElement('span');
+                        span.className = 'text-[10px] sm:text-xs font-display tracking-wider';
+                        span.textContent = keyLabel;
+                        btn.appendChild(span);
+                        keyDomMap.set(keyLabel, btn);
+                    }
+
+                    // Pointer down event for instant zero-latency touch/mouse response
+                    btn.addEventListener('pointerdown', (e) => {
+                        e.preventDefault();
+                        triggerSoftKeyPress(keyLabel, btn);
+                    });
+
+                    rowEl.appendChild(btn);
+                });
+
+                container.appendChild(rowEl);
+            });
+
+            updateGhostKeyHighlight();
+        }
+
+        function getKeyScreenCoordinates(char) {
+            const lower = char.toLowerCase();
+            let el = keyDomMap.get(lower);
+            // If key is on the other layer, originate laser from the ?123 / ABC toggle button
+            if (!el) {
+                el = keyDomMap.get('?123') || keyDomMap.get('ABC');
+            }
+            const canvasRect = canvas.getBoundingClientRect();
+            if (el) {
+                const rect = el.getBoundingClientRect();
+                return {
+                    x: (rect.left + rect.width / 2) - canvasRect.left,
+                    y: canvasRect.height
+                };
+            }
+            return { x: canvasRect.width / 2, y: canvasRect.height };
+        }
+
+        /********************************************************************
+         * 4. GAME STATE, ENTITIES & SKYLINE ARCHITECTURE
+         ********************************************************************/
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let gameState = {
+            running: false,
+            paused: false,
+            mode: 'thumb',       // 'thumb' | 'classic' | 'layers'
+            ghostHints: true,
+            score: 0,
+            wave: 1,
+            wordsCleared: 0,
+            combo: 1,
+            maxCombo: 1,
+            correctKeystrokes: 0,
+            totalKeystrokes: 0,
+            startTime: 0,
+            leftThumbHits: 1,
+            rightThumbHits: 1,
+            lockedTargetId: null,
+            spawnTimer: 0,
+            spawnInterval: 2300,
+            ufoTimer: 0,
+            ufoInterval: 14000,
+            jamCooldown: 0
+        };
+
+        let fallingWords = [];
+        let activeUfo = null;
+        let lasers = [];
+        let particles = [];
+        let floatingTexts = [];
+        let stars = [];
+        let cityDomes = [];
+
+        const DOME_COUNT = 6;
+
+        function initCityDomes() {
+            cityDomes = [];
+            for (let i = 0; i < DOME_COUNT; i++) {
+                cityDomes.push({
+                    index: i,
+                    hp: 3,
+                    maxHp: 3,
+                    hitFlash: 0
+                });
+            }
+        }
+
+        function initStarfield() {
+            stars = [];
+            for (let i = 0; i < 65; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height * 0.85,
+                    size: Math.random() * 1.8 + 0.5,
+                    speed: Math.random() * 0.25 + 0.05,
+                    alpha: Math.random() * 0.65 + 0.2
+                });
+            }
+        }
+
+        function resizeCanvas() {
+            const viewport = document.getElementById('combatViewport');
+            canvas.width = viewport.clientWidth;
+            canvas.height = viewport.clientHeight;
+            if (stars.length === 0) initStarfield();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        /********************************************************************
+         * 5. SPAWNING FALLING WORDS & HORIZONTAL MARQUEE UFOs
+         ********************************************************************/
+        let nextEntityId = 1;
+
+        function pickWordForMode() {
+            const activeFirstChars = new Set(fallingWords.map(w => w.word[w.typedIndex]?.toLowerCase()));
+            let pool = [];
+
+            if (gameState.mode === 'thumb') {
+                pool = WORD_BANKS.thumb;
+            } else if (gameState.mode === 'layers') {
+                pool = Math.random() < 0.65 ? WORD_BANKS.layers : WORD_BANKS.thumb;
+            } else {
+                // Classic Arcade Waves scale word length by wave
+                if (gameState.wave <= 2) pool = [...WORD_BANKS.classicShort, ...WORD_BANKS.thumb.slice(0, 15)];
+                else if (gameState.wave <= 5) pool = WORD_BANKS.classicMedium;
+                else pool = [...WORD_BANKS.classicMedium, ...WORD_BANKS.classicLong];
+            }
+
+            // Prefer words whose starting letter isn't already on screen for clean lock-on
+            const filtered = pool.filter(w => !activeFirstChars.has(w[0].toLowerCase()));
+            const source = filtered.length > 0 ? filtered : pool;
+            return source[Math.floor(Math.random() * source.length)];
+        }
+
+        function spawnFallingWord() {
+            // Find alive domes to target
+            const aliveDomes = cityDomes.filter(d => d.hp > 0);
+            if (aliveDomes.length === 0) return;
+
+            const targetDome = aliveDomes[Math.floor(Math.random() * aliveDomes.length)];
+            const domeSpacing = canvas.width / DOME_COUNT;
+            const domeCenterX = domeSpacing * targetDome.index + domeSpacing / 2;
+
+            const wordText = pickWordForMode();
+            const margin = 65;
+            const spawnX = Math.max(margin, Math.min(canvas.width - margin, domeCenterX + (Math.random() * 50 - 25)));
+
+            // Speed scales gently with wave
+            const baseSpeed = 28 + Math.min(gameState.wave * 4.5, 42);
+            const speed = baseSpeed + (Math.random() * 10 - 5);
+
+            fallingWords.push({
+                id: nextEntityId++,
+                word: wordText,
+                typedIndex: 0,
+                x: spawnX,
+                y: -24,
+                targetDomeIndex: targetDome.index,
+                targetX: domeCenterX,
+                speed: speed,
+                isUfo: false,
+                shakeTimer: 0
+            });
+        }
+
+        function spawnHorizontalUfo() {
+            if (activeUfo) return;
+            const pool = gameState.mode === 'layers' ? WORD_BANKS.layers : WORD_BANKS.ufoBonus;
+            const wordText = pool[Math.floor(Math.random() * pool.length)];
+            const leftToRight = Math.random() < 0.5;
+
+            activeUfo = {
+                id: nextEntityId++,
+                word: wordText,
+                typedIndex: 0,
+                x: leftToRight ? -90 : canvas.width + 90,
+                y: 44,
+                vx: leftToRight ? (68 + gameState.wave * 3) : -(68 + gameState.wave * 3),
+                isUfo: true,
+                shakeTimer: 0
+            };
+
+            document.getElementById('ufoAlertBanner').classList.remove('hidden');
+        }
+
+        /********************************************************************
+         * 6. INPUT HANDLING: SOFTKEY + PHYSICAL KEYBOARD UNIFIED ENGINE
+         ********************************************************************/
+        function triggerSoftKeyPress(keyLabel, btnEl) {
+            audio.init();
+            audio.vibrate(14);
+
+            if (btnEl) {
+                btnEl.classList.add('key-active');
+                setTimeout(() => btnEl.classList.remove('key-active'), 110);
+            }
+
+            if (keyLabel === '?123') {
+                currentKeyLayer = 'sym';
+                renderSoftKeyboard();
+                return;
+            }
+            if (keyLabel === 'ABC') {
+                currentKeyLayer = 'abc';
+                renderSoftKeyboard();
+                return;
+            }
+            if (keyLabel === 'MODE') {
+                cycleTrainingMode();
+                return;
+            }
+            if (keyLabel === 'LOCK NEXT' || keyLabel === 'SPACE' || keyLabel === '⌫') {
+                switchTargetLock();
+                return;
+            }
+
+            handleCharacterInput(keyLabel.toLowerCase());
+        }
+
+        // Physical Keyboard Listener
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+            if (e.key === 'Escape') {
+                togglePause();
+                return;
+            }
+
+            if (!gameState.running || gameState.paused) {
+                if (e.key === 'Enter') startGame();
+                return;
+            }
+
+            if (e.key === 'Tab' || e.key === ' ' || e.key === 'Backspace') {
+                e.preventDefault();
+                switchTargetLock();
+                return;
+            }
+
+            if (e.key.length === 1) {
+                e.preventDefault();
+                const char = e.key.toLowerCase();
+
+                // Auto-flip softkey visual layer if physical keyboard types a number/symbol
+                const needsSymLayer = KEY_LAYOUTS.sym.some(row => row.includes(char));
+                const needsAbcLayer = KEY_LAYOUTS.abc.some(row => row.includes(char));
+                if (needsSymLayer && currentKeyLayer !== 'sym') {
+                    currentKeyLayer = 'sym';
+                    renderSoftKeyboard();
+                } else if (needsAbcLayer && currentKeyLayer !== 'abc') {
+                    currentKeyLayer = 'abc';
+                    renderSoftKeyboard();
+                }
+
+                const btnEl = keyDomMap.get(char);
+                if (btnEl) {
+                    btnEl.classList.add('key-active');
+                    setTimeout(() => btnEl.classList.remove('key-active'), 110);
+                }
+
+                handleCharacterInput(char);
+            }
+        });
+
+        function switchTargetLock() {
+            // Cycle lock onto the next lowest target or UFO
+            const candidates = [...fallingWords];
+            if (activeUfo) candidates.unshift(activeUfo);
+            if (candidates.length === 0) return;
+
+            const currentIdx = candidates.findIndex(c => c.id === gameState.lockedTargetId);
+            const next = candidates[(currentIdx + 1) % candidates.length];
+            gameState.lockedTargetId = next.id;
+            updatePeripheralHud();
+            updateGhostKeyHighlight();
+        }
+
+        function findLockedOrMatchingTarget(char) {
+            // 1. Check if we already have a valid locked target
+            let locked = null;
+            if (activeUfo && activeUfo.id === gameState.lockedTargetId) {
+                locked = activeUfo;
+            } else {
+                locked = fallingWords.find(w => w.id === gameState.lockedTargetId);
+            }
+
+            if (locked) {
+                return locked;
+            }
+
+            // 2. Otherwise search for a target starting with `char`
+            // Prioritize UFO if it matches, else lowest falling word (closest to city domes)
+            if (activeUfo && activeUfo.word[activeUfo.typedIndex].toLowerCase() === char) {
+                gameState.lockedTargetId = activeUfo.id;
+                return activeUfo;
+            }
+
+            let bestMatch = null;
+            for (const w of fallingWords) {
+                if (w.word[w.typedIndex].toLowerCase() === char) {
+                    if (!bestMatch || w.y > bestMatch.y) {
+                        bestMatch = w;
+                    }
+                }
+            }
+
+            if (bestMatch) {
+                gameState.lockedTargetId = bestMatch.id;
+                return bestMatch;
+            }
+
+            // 3. If no match, return lowest falling word to show constructive mistype feedback
+            if (fallingWords.length > 0) {
+                return fallingWords.reduce((a, b) => (a.y > b.y ? a : b));
+            }
+            return activeUfo || null;
+        }
+
+        function handleCharacterInput(char) {
+            if (!gameState.running || gameState.paused) return;
+
+            gameState.totalKeystrokes++;
+            const target = findLockedOrMatchingTarget(char);
+            if (!target) return;
+
+            const expectedChar = target.word[target.typedIndex].toLowerCase();
+
+            if (char === expectedChar) {
+                // HIT!
+                gameState.correctKeystrokes++;
+                target.typedIndex++;
+
+                // Track Left vs Right thumb balance
+                const zone = getThumbZone(char);
+                if (zone === 'left') gameState.leftThumbHits++;
+                if (zone === 'right') gameState.rightThumbHits++;
+
+                // Flash keycap with hit glow
+                const keyEl = keyDomMap.get(char);
+                if (keyEl) {
+                    keyEl.classList.add('key-hit-glow');
+                    setTimeout(() => keyEl.classList.remove('key-hit-glow'), 140);
+                }
+
+                // Fire Laser from exact tapped softkey coordinates up to the falling target
+                const origin = getKeyScreenCoordinates(char);
+                lasers.push({
+                    x1: origin.x,
+                    y1: origin.y,
+                    x2: target.x,
+                    y2: target.y,
+                    color: target.isUfo ? '#ffbe0b' : (zone === 'left' ? '#00f3ff' : '#ff007f'),
+                    life: 1.0
+                });
+
+                // Spawn letter spark particles
+                spawnParticles(target.x, target.y, target.isUfo ? '#ffbe0b' : '#00f3ff', 8);
+
+                // Audio & Score
+                audio.playLaserKey(gameState.combo, target.isUfo);
+                gameState.score += 10 * gameState.combo;
+                gameState.combo = Math.min(gameState.combo + 1, 25);
+                if (gameState.combo > gameState.maxCombo) gameState.maxCombo = gameState.combo;
+
+                // Check if entire word is destroyed
+                if (target.typedIndex >= target.word.length) {
+                    destroyTarget(target);
+                }
+            } else {
+                // MISTYPE / FAT-FINGER FEEDBACK (Don't reset word progress; trigger brief Shield Jam & Heatmap)
+                triggerMistypeFeedback(char, expectedChar, target);
+            }
+
+            updateTelemetryUI();
+            updatePeripheralHud();
+            updateGhostKeyHighlight();
+        }
+
+        function triggerMistypeFeedback(tappedChar, expectedChar, target) {
+            audio.playMistypeJam();
+            audio.vibrate([25, 30, 25]);
+            gameState.combo = 1;
+            target.shakeTimer = 0.25;
+
+            // Subtle downward nudge on mistype instead of cruel full reset
+            if (!target.isUfo) {
+                target.y = Math.min(target.y + 9, canvas.height - 65);
+            }
+
+            // Flash mistyped key RED and intended key AMBER on soft keypad
+            const tappedEl = keyDomMap.get(tappedChar);
+            const expectedEl = keyDomMap.get(expectedChar);
+            if (tappedEl) {
+                tappedEl.classList.add('key-error-flash');
+                setTimeout(() => tappedEl.classList.remove('key-error-flash'), 320);
+            }
+            if (expectedEl) {
+                expectedEl.classList.add('key-intended-flash');
+                setTimeout(() => expectedEl.classList.remove('key-intended-flash'), 450);
+            }
+
+            // Toast notification
+            const toast = document.getElementById('jamToast');
+            const detail = document.getElementById('jamDetail');
+            detail.textContent = `Tapped [${tappedChar.toUpperCase()}] → Needed [${expectedChar.toUpperCase()}]`;
+            toast.classList.remove('opacity-0');
+            clearTimeout(gameState.jamTimeout);
+            gameState.jamTimeout = setTimeout(() => toast.classList.add('opacity-0'), 900);
+        }
+
+        function destroyTarget(target) {
+            audio.playWordDestroy(target.isUfo);
+            gameState.wordsCleared++;
+
+            if (target.isUfo) {
+                const bonus = 250 * gameState.wave;
+                gameState.score += bonus;
+                spawnParticles(target.x, target.y, '#ffbe0b', 28);
+                floatingTexts.push({
+                    x: target.x,
+                    y: target.y,
+                    text: `+${bonus} SHIELD REPAIRED!`,
+                    color: '#ffbe0b',
+                    life: 1.3
+                });
+
+                // Restore a damaged city dome
+                const damaged = cityDomes.find(d => d.hp < d.maxHp);
+                if (damaged) damaged.hp++;
+
+                activeUfo = null;
+                document.getElementById('ufoAlertBanner').classList.add('hidden');
+            } else {
+                const wordBonus = target.word.length * 25;
+                gameState.score += wordBonus;
+                spawnParticles(target.x, target.y, '#00ff9d', 18);
+                floatingTexts.push({
+                    x: target.x,
+                    y: target.y,
+                    text: `+${wordBonus}`,
+                    color: '#00ff9d',
+                    life: 0.9
+                });
+
+                fallingWords = fallingWords.filter(w => w.id !== target.id);
+            }
+
+            // Wave Progression every 8 words
+            if (gameState.wordsCleared % 8 === 0) {
+                gameState.wave++;
+                gameState.spawnInterval = Math.max(950, 2300 - gameState.wave * 135);
+                floatingTexts.push({
+                    x: canvas.width / 2,
+                    y: canvas.height * 0.35,
+                    text: `WAVE ${gameState.wave} INCOMING`,
+                    color: '#00f3ff',
+                    life: 1.5
+                });
+            }
+
+            // Auto-lock onto next closest word
+            gameState.lockedTargetId = null;
+            if (fallingWords.length > 0) {
+                const lowest = fallingWords.reduce((a, b) => (a.y > b.y ? a : b));
+                gameState.lockedTargetId = lowest.id;
+            } else if (activeUfo) {
+                gameState.lockedTargetId = activeUfo.id;
+            }
+        }
+
+        /********************************************************************
+         * 7. PERIPHERAL HUD & GHOST KEY ASSIST UPDATES
+         ********************************************************************/
+        function updatePeripheralHud() {
+            const badge = document.getElementById('lockBadge');
+            const wordContainer = document.getElementById('hudLockedWord');
+            const thumbInd = document.getElementById('thumbIndicator');
+            const thumbArrow = document.getElementById('thumbArrow');
+            const thumbText = document.getElementById('thumbText');
+
+            let target = null;
+            if (activeUfo && activeUfo.id === gameState.lockedTargetId) target = activeUfo;
+            else target = fallingWords.find(w => w.id === gameState.lockedTargetId);
+
+            // If no explicit lock, preview the lowest falling word
+            if (!target && fallingWords.length > 0) {
+                target = fallingWords.reduce((a, b) => (a.y > b.y ? a : b));
+            }
+
+            if (!target) {
+                badge.textContent = 'SCANNING';
+                badge.className = 'px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-display font-bold uppercase tracking-wider bg-slate-800 text-slate-400 border border-slate-700 shrink-0';
+                wordContainer.innerHTML = '<span class="text-slate-500 text-xs sm:text-sm font-normal italic">Awaiting incoming transmission...</span>';
+                thumbArrow.textContent = '👐';
+                thumbText.textContent = 'READY';
+                thumbInd.className = 'px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-bold border border-slate-700 bg-slate-900/90 text-slate-400 flex items-center gap-1.5';
+                return;
+            }
+
+            badge.textContent = target.isUfo ? '🛸 UFO LOCK' : '🎯 LOCKED';
+            badge.className = target.isUfo
+                ? 'px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-display font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-400 shrink-0'
+                : 'px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-display font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-400 shrink-0';
+
+            // Render typed vs active vs remaining characters
+            const typedPart = target.word.slice(0, target.typedIndex);
+            const currentChar = target.word[target.typedIndex] || '';
+            const restPart = target.word.slice(target.typedIndex + 1);
+
+            wordContainer.innerHTML = `
+                <span class="text-emerald-400/60 line-through">${escapeHtml(typedPart.toUpperCase())}</span>
+                <span class="bg-cyan-400 text-slate-950 px-1.5 rounded font-black shadow-[0_0_10px_#00f3ff] animate-pulse">${escapeHtml(currentChar.toUpperCase())}</span>
+                <span class="text-white">${escapeHtml(restPart.toUpperCase())}</span>
+            `;
+
+            // Update Thumb Hand Ergonomic Indicator
+            const nextCharLower = currentChar.toLowerCase();
+            const zone = getThumbZone(nextCharLower);
+
+            if (zone === 'left') {
+                thumbArrow.textContent = '👈';
+                thumbText.textContent = `LEFT [${currentChar.toUpperCase()}]`;
+                thumbInd.className = 'px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-bold border border-cyan-400/60 bg-cyan-950/70 text-cyan-200 flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,243,255,0.25)]';
+            } else if (zone === 'right') {
+                thumbArrow.textContent = '👉';
+                thumbText.textContent = `RIGHT [${currentChar.toUpperCase()}]`;
+                thumbInd.className = 'px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-bold border border-fuchsia-400/60 bg-fuchsia-950/70 text-fuchsia-200 flex items-center gap-1.5 shadow-[0_0_10px_rgba(255,0,127,0.25)]';
+            } else {
+                thumbArrow.textContent = '⚡';
+                thumbText.textContent = `KEY [${currentChar.toUpperCase()}]`;
+                thumbInd.className = 'px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-bold border border-amber-400/60 bg-amber-950/70 text-amber-200 flex items-center gap-1.5';
+            }
+        }
+
+        function updateGhostKeyHighlight() {
+            // Clear existing ghost highlights
+            keyDomMap.forEach(el => el.classList.remove('key-ghost-hint'));
+            if (!gameState.ghostHints || !gameState.running) return;
+
+            let target = fallingWords.find(w => w.id === gameState.lockedTargetId);
+            if (!target && fallingWords.length > 0) {
+                target = fallingWords.reduce((a, b) => (a.y > b.y ? a : b));
+            }
+
+            // Highlight when target drops below the 50% danger line (or always in layer drills if layer switch is needed)
+            if (!target) return;
+            const pastDangerLine = target.y >= canvas.height * 0.48;
+            if (!pastDangerLine && gameState.mode !== 'layers') return;
+
+            const nextChar = (target.word[target.typedIndex] || '').toLowerCase();
+            if (!nextChar) return;
+
+            const directKeyEl = keyDomMap.get(nextChar);
+            if (directKeyEl) {
+                directKeyEl.classList.add('key-ghost-hint');
+            } else {
+                // Required character is on the alternate keyboard layer (?123 or ABC)! Highlight the layer switch key!
+                const switchKeyEl = keyDomMap.get('?123') || keyDomMap.get('ABC');
+                if (switchKeyEl) switchKeyEl.classList.add('key-ghost-hint');
+            }
+        }
+
+        function updateTelemetryUI() {
+            document.getElementById('scoreDisplay').textContent = String(gameState.score).padStart(5, '0');
+            document.getElementById('waveDisplay').textContent = String(gameState.wave).padStart(2, '0');
+
+            const elapsedMinutes = Math.max((performance.now() - gameState.startTime) / 60000, 0.05);
+            const wpm = Math.round((gameState.correctKeystrokes / 5) / elapsedMinutes);
+            const acc = gameState.totalKeystrokes > 0
+                ? Math.round((gameState.correctKeystrokes / gameState.totalKeystrokes) * 100)
+                : 100;
+
+            document.getElementById('wpmDisplay').innerHTML = `${wpm} <span class="text-slate-400 text-[10px]">${acc}%</span>`;
+            document.getElementById('comboBadge').innerHTML = `${gameState.combo}x <span class="text-[9px] font-sans font-normal text-fuchsia-400">COMBO</span>`;
+
+            // L/R Thumb Balance Bar
+            const totalThumbs = gameState.leftThumbHits + gameState.rightThumbHits;
+            const leftPct = Math.round((gameState.leftThumbHits / totalThumbs) * 100);
+            document.getElementById('leftThumbBar').style.width = `${leftPct}%`;
+            document.getElementById('rightThumbBar').style.width = `${100 - leftPct}%`;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, m => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[m]));
+        }
+
+        /********************************************************************
+         * 8. PARTICLES & VISUAL FX HELPERS
+         ********************************************************************/
+        function spawnParticles(x, y, color, count = 12) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 140 + 40;
+                particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    color,
+                    size: Math.random() * 3 + 1.5,
+                    life: 1.0
+                });
+            }
+        }
+
+        /********************************************************************
+         * 9. MAIN 60FPS GAME LOOP & SYNTHWAVE CANVAS RENDERER
+         ********************************************************************/
+        let lastFrameTime = performance.now();
+
+        function updateGame(dt) {
+            if (!gameState.running || gameState.paused) return;
+
+            // Spawn Vertical Word Rain
+            gameState.spawnTimer += dt * 1000;
+            if (gameState.spawnTimer >= gameState.spawnInterval) {
+                gameState.spawnTimer = 0;
+                if (fallingWords.length < 7) {
+                    spawnFallingWord();
+                    updatePeripheralHud();
+                }
+            }
+
+            // Spawn Horizontal UFO Marquee
+            gameState.ufoTimer += dt * 1000;
+            if (gameState.ufoTimer >= gameState.ufoInterval) {
+                gameState.ufoTimer = 0;
+                spawnHorizontalUfo();
+                updatePeripheralHud();
+            }
+
+            const skylineTopY = canvas.height - 38;
+
+            // Update Falling Words
+            for (let i = fallingWords.length - 1; i >= 0; i--) {
+                const w = fallingWords[i];
+                w.y += w.speed * dt;
+                if (w.shakeTimer > 0) w.shakeTimer -= dt;
+
+                // Gently drift horizontally toward target city dome
+                w.x += (w.targetX - w.x) * 0.35 * dt;
+
+                // Impact with City Skyline Dome
+                if (w.y >= skylineTopY) {
+                    const dome = cityDomes[w.targetDomeIndex];
+                    if (dome && dome.hp > 0) {
+                        dome.hp--;
+                        dome.hitFlash = 1.0;
+                    }
+
+                    audio.playDomeHit();
+                    audio.vibrate([40, 20, 60]);
+                    gameState.combo = 1;
+                    spawnParticles(w.x, skylineTopY, '#ff2a54', 24);
+
+                    // Screen shake
+                    const vp = document.getElementById('combatViewport');
+                    vp.classList.remove('shake-anim');
+                    void vp.offsetWidth;
+                    vp.classList.add('shake-anim');
+
+                    if (gameState.lockedTargetId === w.id) {
+                        gameState.lockedTargetId = null;
+                    }
+                    fallingWords.splice(i, 1);
+
+                    // Check Game Over (all 6 domes destroyed)
+                    if (cityDomes.every(d => d.hp <= 0)) {
+                        triggerGameOver();
+                        return;
+                    }
+                }
+            }
+
+            // Update Horizontal UFO Marquee
+            if (activeUfo) {
+                activeUfo.x += activeUfo.vx * dt;
+                if (activeUfo.shakeTimer > 0) activeUfo.shakeTimer -= dt;
+
+                if (activeUfo.x < -140 || activeUfo.x > canvas.width + 140) {
+                    if (gameState.lockedTargetId === activeUfo.id) {
+                        gameState.lockedTargetId = null;
+                    }
+                    activeUfo = null;
+                    document.getElementById('ufoAlertBanner').classList.add('hidden');
+                }
+            }
+
+            // Update Lasers
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                lasers[i].life -= dt * 6.5;
+                if (lasers[i].life <= 0) lasers.splice(i, 1);
+            }
+
+            // Update Particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.vy += 180 * dt; // Gravity
+                p.life -= dt * 1.9;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // Update Floating Bonus Texts
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ft.y -= 28 * dt;
+                ft.life -= dt;
+                if (ft.life <= 0) floatingTexts.splice(i, 1);
+            }
+
+            updateGhostKeyHighlight();
+            updatePeripheralHud();
+        }
+
+        function drawGame() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Perspective Synthwave Grid & Parallax Stars
+            ctx.fillStyle = '#060711';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            stars.forEach(s => {
+                s.y += s.speed;
+                if (s.y > canvas.height * 0.85) s.y = 0;
+                ctx.fillStyle = `rgba(180, 230, 255, ${s.alpha})`;
+                ctx.fillRect(s.x, s.y, s.size, s.size);
+            });
+
+            // Subtle vertical cyber grid lines
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.05)';
+            ctx.lineWidth = 1;
+            const gridCols = 12;
+            for (let i = 1; i < gridCols; i++) {
+                const x = (canvas.width / gridCols) * i;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            // 2. Draw Destructible Neon City Skyline / Defense Domes
+            const domeSpacing = canvas.width / DOME_COUNT;
+            const groundY = canvas.height - 6;
+
+            cityDomes.forEach((dome, idx) => {
+                const centerX = domeSpacing * idx + domeSpacing / 2;
+                const domeWidth = Math.min(domeSpacing * 0.72, 95);
+                const domeHeight = 28;
+
+                if (dome.hitFlash > 0) dome.hitFlash = Math.max(0, dome.hitFlash - 0.05);
+
+                if (dome.hp > 0) {
+                    const shieldColor = dome.hp === 3 ? '#00f3ff' : (dome.hp === 2 ? '#ffbe0b' : '#ff2a54');
+
+                    // Glowing Shield Dome Arc
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(centerX, groundY, domeWidth / 2, Math.PI, 0, false);
+                    ctx.fillStyle = dome.hitFlash > 0
+                        ? 'rgba(255, 42, 84, 0.55)'
+                        : (dome.hp === 3 ? 'rgba(0, 243, 255, 0.14)' : dome.hp === 2 ? 'rgba(255, 190, 11, 0.14)' : 'rgba(255, 42, 84, 0.18)');
+                    ctx.fill();
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = shieldColor;
+                    ctx.shadowColor = shieldColor;
+                    ctx.shadowBlur = 10;
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // Neon City Skyline Silhouette inside the Dome
+                    ctx.fillStyle = '#111836';
+                    ctx.strokeStyle = shieldColor;
+                    ctx.lineWidth = 1;
+                    const b1W = domeWidth * 0.22;
+                    const b2W = domeWidth * 0.26;
+                    ctx.fillRect(centerX - b1W - 2, groundY - domeHeight * 0.65, b1W, domeHeight * 0.65);
+                    ctx.fillRect(centerX + 2, groundY - domeHeight * 0.8, b2W, domeHeight * 0.8);
+
+                    // HP pips
+                    for (let h = 0; h < dome.maxHp; h++) {
+                        ctx.fillStyle = h < dome.hp ? shieldColor : '#1e293b';
+                        ctx.fillRect(centerX - 13 + h * 10, groundY - 4, 7, 3);
+                    }
+                } else {
+                    // Ruined Crater
+                    ctx.strokeStyle = 'rgba(255, 42, 84, 0.35)';
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - domeWidth * 0.35, groundY);
+                    ctx.lineTo(centerX + domeWidth * 0.35, groundY);
+                    ctx.stroke();
+                }
+            });
+
+            // 3. Draw Active Laser Beams from Tapped Keys
+            lasers.forEach(l => {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(l.x1, l.y1);
+                ctx.lineTo(l.x2, l.y2);
+                ctx.strokeStyle = l.color;
+                ctx.lineWidth = 3.5 * l.life;
+                ctx.shadowColor = l.color;
+                ctx.shadowBlur = 14;
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            // 4. Draw Horizontal Flying Marquee UFO
+            if (activeUfo) {
+                drawWordEntity(activeUfo, true);
+            }
+
+            // 5. Draw Falling Words ("Rain")
+            fallingWords.forEach(w => {
+                drawWordEntity(w, false);
+            });
+
+            // 6. Draw Particles
+            particles.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, p.life);
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 8;
+                ctx.fillRect(p.x, p.y, p.size, p.size);
+                ctx.restore();
+            });
+
+            // 7. Draw Floating Bonus Texts
+            floatingTexts.forEach(ft => {
+                ctx.save();
+                ctx.globalAlpha = Math.min(1, ft.life);
+                ctx.font = 'bold 13px "Orbitron", sans-serif';
+                ctx.fillStyle = ft.color;
+                ctx.textAlign = 'center';
+                ctx.shadowColor = ft.color;
+                ctx.shadowBlur = 8;
+                ctx.fillText(ft.text, ft.x, ft.y);
+                ctx.restore();
+            });
+        }
+
+        function drawWordEntity(entity, isUfo) {
+            const isLocked = entity.id === gameState.lockedTargetId;
+            const shakeX = entity.shakeTimer > 0 ? (Math.random() - 0.5) * 10 : 0;
+            const x = entity.x + shakeX;
+            const y = entity.y;
+
+            ctx.save();
+            ctx.font = '800 16px "JetBrains Mono", monospace';
+            const remainingText = entity.word.slice(entity.typedIndex).toUpperCase();
+            const fullUpper = entity.word.toUpperCase();
+            const textMetrics = ctx.measureText(fullUpper);
+            const boxW = textMetrics.width + 24;
+            const boxH = 28;
+
+            // UFO Saucer Disc Underlay
+            if (isUfo) {
+                ctx.beginPath();
+                ctx.ellipse(x, y, boxW * 0.62, 16, 0, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 190, 11, 0.16)';
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#ffbe0b';
+                ctx.shadowColor = '#ffbe0b';
+                ctx.shadowBlur = 12;
+                ctx.stroke();
+            } else {
+                // Falling Drop Pill Container
+                const rx = x - boxW / 2;
+                const ry = y - boxH / 2;
+
+                ctx.fillStyle = isLocked ? 'rgba(8, 28, 48, 0.92)' : 'rgba(11, 15, 32, 0.85)';
+                ctx.strokeStyle = isLocked ? '#00f3ff' : 'rgba(148, 163, 184, 0.35)';
+                ctx.lineWidth = isLocked ? 2 : 1;
+
+                if (isLocked) {
+                    ctx.shadowColor = '#00f3ff';
+                    ctx.shadowBlur = 12;
+                }
+
+                ctx.beginPath();
+                ctx.roundRect(rx, ry, boxW, boxH, 7);
+                ctx.fill();
+                ctx.stroke();
+
+                // Target Lock Reticle Brackets
+                if (isLocked) {
+                    ctx.strokeStyle = '#00ff9d';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(rx - 5, ry + 6);
+                    ctx.lineTo(rx - 5, ry - 4);
+                    ctx.lineTo(rx + 5, ry - 4);
+                    ctx.moveTo(rx + boxW + 5, ry + boxH - 6);
+                    ctx.lineTo(rx + boxW + 5, ry + boxH + 4);
+                    ctx.lineTo(rx + boxW - 5, ry + boxH + 4);
+                    ctx.stroke();
+                }
+            }
+
+            // Render Character-by-Character with Left/Right Thumb Color Coding
+            ctx.shadowBlur = 0;
+            ctx.textBaseline = 'middle';
+            let cursorX = x - textMetrics.width / 2;
+
+            for (let i = 0; i < entity.word.length; i++) {
+                const ch = entity.word[i];
+                const chUpper = ch.toUpperCase();
+                const chWidth = ctx.measureText(chUpper).width;
+
+                if (i < entity.typedIndex) {
+                    // Already chipped away
+                    ctx.fillStyle = 'rgba(100, 116, 139, 0.32)';
+                } else if (i === entity.typedIndex && isLocked) {
+                    // Current Active Character
+                    ctx.fillStyle = '#00ff9d';
+                    ctx.shadowColor = '#00ff9d';
+                    ctx.shadowBlur = 8;
+                } else {
+                    ctx.shadowBlur = 0;
+                    if (isUfo) {
+                        ctx.fillStyle = '#fde047';
+                    } else if (gameState.mode === 'thumb') {
+                        const zone = getThumbZone(ch);
+                        ctx.fillStyle = zone === 'left' ? '#67e8f9' : (zone === 'right' ? '#f472b6' : '#f8fafc');
+                    } else {
+                        ctx.fillStyle = '#f1f5f9';
+                    }
+                }
+
+                ctx.fillText(chUpper, cursorX, y + 1);
+                cursorX += chWidth;
+            }
+
+            ctx.restore();
+        }
+
+        function animationLoop(now) {
+            const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
+            lastFrameTime = now;
+
+            updateGame(dt);
+            drawGame();
+            requestAnimationFrame(animationLoop);
+        }
+
+        /********************************************************************
+         * 10. GAME LIFECYCLE & UI CONTROLS
+         ********************************************************************/
+        function startGame() {
+            audio.init();
+            resizeCanvas();
+            initCityDomes();
+
+            fallingWords = [];
+            activeUfo = null;
+            lasers = [];
+            particles = [];
+            floatingTexts = [];
+
+            gameState.running = true;
+            gameState.paused = false;
+            gameState.score = 0;
+            gameState.wave = 1;
+            gameState.wordsCleared = 0;
+            gameState.combo = 1;
+            gameState.correctKeystrokes = 0;
+            gameState.totalKeystrokes = 0;
+            gameState.leftThumbHits = 1;
+            gameState.rightThumbHits = 1;
+            gameState.lockedTargetId = null;
+            gameState.spawnTimer = 1800; // Spawn first word quickly
+            gameState.spawnInterval = 2200;
+            gameState.ufoTimer = 0;
+            gameState.startTime = performance.now();
+
+            document.getElementById('modalOverlay').classList.add('hidden');
+            document.getElementById('finalStatsBox').classList.add('hidden');
+            document.getElementById('ufoAlertBanner').classList.add('hidden');
+
+            updateTelemetryUI();
+            updatePeripheralHud();
+            updateGhostKeyHighlight();
+        }
+
+        function triggerGameOver() {
+            gameState.running = false;
+            const elapsedMinutes = Math.max((performance.now() - gameState.startTime) / 60000, 0.05);
+            const wpm = Math.round((gameState.correctKeystrokes / 5) / elapsedMinutes);
+            const acc = gameState.totalKeystrokes > 0
+                ? Math.round((gameState.correctKeystrokes / gameState.totalKeystrokes) * 100)
+                : 100;
+
+            document.getElementById('modalTitle').textContent = 'SKYLINE BREACHED';
+            document.getElementById('modalSubtitle').textContent = 'All 6 Neon City Defense Domes were overwhelmed by the word rain.';
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('finalWpm').textContent = wpm;
+            document.getElementById('finalAcc').textContent = `${acc}%`;
+            document.getElementById('finalStatsBox').classList.remove('hidden');
+            document.getElementById('startGameBtn').textContent = 'Relaunch Defense Grid';
+            document.getElementById('modalOverlay').classList.remove('hidden');
+        }
+
+        function togglePause() {
+            if (!gameState.running) return;
+            gameState.paused = !gameState.paused;
+            const modal = document.getElementById('modalOverlay');
+            if (gameState.paused) {
+                document.getElementById('modalTitle').textContent = 'SYSTEM PAUSED';
+                document.getElementById('modalSubtitle').textContent = 'Switch training modes above or resume defending the skyline.';
+                document.getElementById('startGameBtn').textContent = 'Resume Mission';
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        function cycleTrainingMode() {
+            const select = document.getElementById('modeSelect');
+            const modes = ['thumb', 'classic', 'layers'];
+            const nextIdx = (modes.indexOf(gameState.mode) + 1) % modes.length;
+            gameState.mode = modes[nextIdx];
+            select.value = gameState.mode;
+        }
+
+        // Bind UI Event Listeners
+        document.getElementById('startGameBtn').addEventListener('click', () => {
+            if (gameState.running && gameState.paused) {
+                togglePause();
+            } else {
+                startGame();
+            }
+        });
+
+        document.getElementById('pauseBtn').addEventListener('click', togglePause);
+
+        document.getElementById('modeSelect').addEventListener('change', (e) => {
+            gameState.mode = e.target.value;
+            e.target.blur();
+        });
+
+        document.getElementById('ghostToggleBtn').addEventListener('click', () => {
+            gameState.ghostHints = !gameState.ghostHints;
+            document.getElementById('ghostStatusText').textContent = gameState.ghostHints ? 'ON' : 'OFF';
+            document.getElementById('ghostDot').className = gameState.ghostHints
+                ? 'w-1.5 h-1.5 rounded-full bg-emerald-400'
+                : 'w-1.5 h-1.5 rounded-full bg-slate-500';
+            document.getElementById('dangerLine').style.opacity = gameState.ghostHints ? '1' : '0.2';
+            updateGhostKeyHighlight();
+        });
+
+        document.getElementById('soundToggleBtn').addEventListener('click', () => {
+            audio.muted = !audio.muted;
+            document.getElementById('soundIcon').textContent = audio.muted ? '🔇' : '🔊';
+        });
+
+        // Boot on Window Load
+        window.onload = function () {
+            resizeCanvas();
+            initCityDomes();
+            renderSoftKeyboard();
+            requestAnimationFrame(animationLoop);
+        };
+    </script>
+</body>
+</html>
