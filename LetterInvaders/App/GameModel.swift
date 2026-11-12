@@ -21,6 +21,11 @@ struct Spark {
 @MainActor final class GameModel: NSObject, ObservableObject {
     @Published private(set) var frame = 0
     var engine = GameEngine()
+    var selectedRules: RunRules = .firstContact
+    var progress: SavedProgress { progressStore.progress }
+    var saveNotice: String?
+    private let progressStore: ProgressStore
+    private var checkpointElapsed: Double = 0
     var layer: KeyLayer = .letters
     var beams: [Beam] = []
     var sparks: [Spark] = []
@@ -43,12 +48,20 @@ struct Spark {
     private var previousTime: CFTimeInterval = 0
 
     override init() {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LetterInvaders", isDirectory: true)
+        progressStore = ProgressStore(url: directory.appendingPathComponent("progress.json"))
         defaults.register(defaults: ["hints": true, "sound": true, "haptics": true])
         hints = defaults.bool(forKey: "hints")
         sound = defaults.bool(forKey: "sound")
         haptics = defaults.bool(forKey: "haptics")
         super.init()
         audio.enabled = sound
+        saveNotice = progressStore.notice
+        if let checkpoint = progressStore.progress.checkpoint {
+            engine = checkpoint
+            selectedRules = checkpoint.rules
+        }
     }
 
     func connect() {
@@ -63,7 +76,9 @@ struct Spark {
     func refresh() { frame &+= 1 }
 
     func start() {
-        engine.start()
+        engine.start(rules: selectedRules)
+        checkpointElapsed = 0
+        saveProgress()
         layer = .letters
         beams = []; sparks = []
         message = ""; messageLife = 0; keyFlash = 0; damageFlash = 0
@@ -76,6 +91,7 @@ struct Spark {
     func pause() {
         engine.pause()
         saveBest()
+        saveProgress()
         displayLink?.isPaused = true
         audio.stop()
         previousTime = 0
@@ -88,12 +104,20 @@ struct Spark {
         refresh()
     }
     func selectMode(_ mode: TrainingMode) {
-        guard engine.phase == .ready || engine.phase == .gameOver else { return }
+        guard engine.phase == .ready else { return }
         engine.mode = mode
+        selectedRules = .endless
+        refresh()
+    }
+    func selectMission() {
+        guard engine.phase == .ready else { return }
+        selectedRules = .firstContact
         refresh()
     }
     func returnToMenu() {
         pause()
+        do { try progressStore.discardRun() }
+        catch { saveNotice = "Progress could not be saved. Your previous save has been kept." }
         let mode = engine.mode
         engine = GameEngine()
         engine.mode = mode
@@ -121,7 +145,7 @@ struct Spark {
         }
         pressedKey = key
         keyFlash = 0.18
-        engine.input(key)
+        engine.input(key, source: hardware ? .hardware : .touch)
         consumeEvents()
         refresh()
     }
@@ -143,6 +167,7 @@ struct Spark {
         keyFlash = max(0, keyFlash - dt)
         if keyFlash == 0 { errorKey = nil; intendedKey = nil; pressedKey = nil }
         consumeEvents()
+        if engine.phase == .playing && engine.elapsed - checkpointElapsed >= 3 { saveProgress() }
         refresh()
     }
     private func consumeEvents() {
@@ -173,15 +198,18 @@ struct Spark {
                 messageLife = 1.1
                 audio.play(.clear(target.isUFO))
                 saveBest()
+                saveProgress()
             case let .impact(dome):
                 damageFlash = 0.3
                 burst(x: (Double(dome) + 0.5) * 65, y: 370, color: Palette.red, count: 24)
                 audio.play(.impact)
                 if haptics { notificationHaptic.notificationOccurred(.error) }
+                saveProgress()
             case let .wave(number):
                 message = "WAVE \(number) INCOMING"; messageLife = 1.8
-            case .gameOver:
+            case .gameOver, .victory:
                 saveBest()
+                saveProgress()
                 displayLink?.isPaused = true
             }
         }
@@ -193,7 +221,18 @@ struct Spark {
             sparks.append(Spark(x: x, y: y, vx: cos(angle) * speed, vy: sin(angle) * speed, color: color))
         }
     }
+    private func saveProgress() {
+        guard engine.phase != .ready else { return }
+        checkpointElapsed = engine.elapsed
+        do {
+            try progressStore.save(engine)
+            saveNotice = nil
+        } catch {
+            saveNotice = progressStore.notice ?? "Progress could not be saved. Keep the app open and try again from the pause screen."
+        }
+    }
     private func saveBest() {
+        guard engine.rules == .endless else { return }
         if engine.score > bestScore { defaults.set(engine.score, forKey: "best.\(engine.mode.rawValue)") }
     }
 }

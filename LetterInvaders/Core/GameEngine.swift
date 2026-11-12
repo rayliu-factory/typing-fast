@@ -1,6 +1,6 @@
 import Foundation
 
-enum TrainingMode: String, CaseIterable, Identifiable {
+enum TrainingMode: String, Codable, CaseIterable, Identifiable {
     case thumb, classic, layers
     var id: String { rawValue }
     var title: String {
@@ -26,7 +26,7 @@ enum TrainingMode: String, CaseIterable, Identifiable {
     }
 }
 
-enum GamePhase { case ready, playing, paused, gameOver }
+enum GamePhase: String, Codable { case ready, playing, paused, gameOver, victory }
 enum ThumbZone { case left, right, neutral }
 enum KeyLayer { case letters, symbols }
 
@@ -47,7 +47,7 @@ enum KeyboardLayout {
     static func contains(_ key: String, in layer: KeyLayer) -> Bool { rows(layer).joined().contains(key) }
 }
 
-struct Invader: Identifiable {
+struct Invader: Codable, Identifiable {
     let id: Int
     let word: String
     var typed = 0
@@ -67,11 +67,15 @@ enum GameEvent {
     case impact(Int)
     case wave(Int)
     case gameOver
+    case victory
 }
 
 /// Deterministic simulation, independent of rendering, audio and the system clock.
 /// Time advances only while playing; backgrounding and pausing cannot change WPM.
-struct GameEngine {
+struct GameEngine: Codable {
+    private(set) var rules: RunRules = .endless
+    private(set) var runID = UUID()
+    private(set) var result: RunResult?
     var phase: GamePhase = .ready
     var mode: TrainingMode = .thumb
     var targets: [Invader] = []
@@ -84,6 +88,7 @@ struct GameEngine {
     var wordsCleared = 0
     var correctKeys = 0
     var totalKeys = 0
+    private(set) var inputSources: Set<InputSource> = []
     var leftHits = 0
     var rightHits = 0
     var elapsed: Double = 0
@@ -95,6 +100,14 @@ struct GameEngine {
     private var nextID = 1
     private var random: SeededRandom
 
+    // Transient feedback must never replay when a saved run is restored.
+    private enum CodingKeys: String, CodingKey {
+        case rules, runID, result, phase, mode, targets, shields, lockedID
+        case score, wave, combo, maxCombo, wordsCleared, correctKeys, totalKeys
+        case inputSources, leftHits, rightHits, elapsed, peakWPM, spawnTimer, ufoTimer, spawnInterval
+        case nextID, random
+    }
+
     init(seed: UInt64 = UInt64.random(in: 1...UInt64.max)) { random = SeededRandom(seed: seed) }
     var accuracy: Int { totalKeys == 0 ? 100 : Int((Double(correctKeys) / Double(totalKeys) * 100).rounded()) }
     var wpm: Int { Int((Double(correctKeys) / 5 / max(elapsed / 60, 0.05)).rounded()) }
@@ -103,11 +116,35 @@ struct GameEngine {
     var preview: Invader? { locked ?? lowest ?? targets.first }
     var ufo: Invader? { targets.first { $0.isUFO } }
 
-    mutating func start() {
+    /// Validate saved state before it can index shields or resume the simulation.
+    var isResumable: Bool {
+        guard phase == .playing || phase == .paused, result == nil,
+              shields.count == 6, shields.allSatisfy({ (0...3).contains($0) }),
+              shields.contains(where: { $0 > 0 }), targets.count <= rules.maxTargets + (rules == .endless ? 1 : 0),
+              (1...25).contains(combo), (1...25).contains(maxCombo),
+              (1...1_000_000).contains(wave), score >= 0, score < 1_000_000_000_000,
+              totalKeys >= 0, totalKeys < 1_000_000_000, correctKeys >= 0, correctKeys <= totalKeys,
+              wordsCleared >= 0, wordsCleared <= correctKeys,
+              elapsed.isFinite, elapsed >= 0, elapsed < 1_000_000_000,
+              spawnInterval.isFinite, spawnInterval > 0,
+              spawnTimer.isFinite, ufoTimer.isFinite,
+              Set(targets.map(\.id)).count == targets.count,
+              nextID > 0, nextID < Int.max,
+              lockedID == nil || targets.contains(where: { $0.id == lockedID }) else { return false }
+        if let goal = rules.wordGoal, wordsCleared >= goal { return false }
+        return targets.allSatisfy {
+            $0.id > 0 && $0.id < nextID && !$0.word.isEmpty && $0.word.count <= 100
+                && $0.typed >= 0 && $0.typed < $0.word.count && shields.indices.contains($0.dome)
+                && $0.x.isFinite && $0.y.isFinite && $0.speed.isFinite
+        }
+    }
+
+    mutating func start(rules: RunRules = .endless) {
         let selectedMode = mode
         let generator = random
         self = GameEngine(seed: 1)
-        mode = selectedMode
+        self.rules = rules
+        mode = rules == .firstContact ? .thumb : selectedMode
         random = generator
         phase = .playing
     }
@@ -124,15 +161,16 @@ struct GameEngine {
 
     func hintKey(layer: KeyLayer, enabled: Bool) -> String? {
         guard enabled, phase == .playing, let target = preview,
-              target.y >= 192 || mode == .layers else { return nil }
+              target.y >= 192 || mode == .layers || rules.immediateHints else { return nil }
         return KeyboardLayout.contains(target.next, in: layer) ? target.next : (layer == .letters ? "?123" : "ABC")
     }
 
-    mutating func input(_ text: String) {
+    mutating func input(_ text: String, source: InputSource = .touch) {
         guard phase == .playing, text.count == 1 else { return }
         let key = text.lowercased()
         // Empty-sky taps are ignored rather than silently lowering accuracy.
         guard !targets.isEmpty else { return }
+        inputSources.insert(source)
         totalKeys += 1
         var index = targets.firstIndex { $0.id == lockedID }
         if index == nil {
@@ -178,7 +216,9 @@ struct GameEngine {
             repaired = true
         }
         events.append(.cleared(target, bonus, repaired))
-        if wordsCleared % 8 == 0 {
+        if let goal = rules.wordGoal, wordsCleared >= goal {
+            finish(.completed)
+        } else if rules == .endless && wordsCleared % 8 == 0 {
             wave += 1
             spawnInterval = max(0.95, 2.3 - Double(wave) * 0.135)
             events.append(.wave(wave))
@@ -194,9 +234,9 @@ struct GameEngine {
         ufoTimer += dt
         if spawnTimer >= spawnInterval {
             spawnTimer = 0
-            if targets.filter({ !$0.isUFO }).count < 7 { spawnWord() }
+            if targets.filter({ !$0.isUFO }).count < rules.maxTargets { spawnWord() }
         }
-        if ufoTimer >= 14 {
+        if rules == .endless && ufoTimer >= 14 {
             ufoTimer = 0
             if ufo == nil { spawnUFO() }
         }
@@ -215,13 +255,20 @@ struct GameEngine {
                     events.append(.impact(dome))
                     remove(at: i)
                     if shields.allSatisfy({ $0 == 0 }) {
-                        phase = .gameOver
-                        events.append(.gameOver)
+                        finish(.lost)
                         return
                     }
                 }
             }
         }
+    }
+
+    private mutating func finish(_ outcome: RunOutcome) {
+        phase = outcome == .completed ? .victory : .gameOver
+        result = RunResult(id: runID, rules: rules, mode: mode, outcome: outcome,
+                           score: score, wordsCleared: wordsCleared, correctKeys: correctKeys,
+                           totalKeys: totalKeys, elapsed: elapsed, inputSources: inputSources)
+        events.append(outcome == .completed ? .victory : .gameOver)
     }
 
     private mutating func remove(at index: Int) {
@@ -237,19 +284,23 @@ struct GameEngine {
         guard !alive.isEmpty else { return }
         let dome = alive[Int(random.next() % UInt64(alive.count))]
         let pool: [String]
-        switch mode {
-        case .thumb: pool = WordBanks.thumb
-        case .layers: pool = random.unit() < 0.65 ? WordBanks.layers : WordBanks.thumb
-        case .classic:
-            pool = wave <= 2 ? WordBanks.classicShort + WordBanks.thumb.prefix(15)
-                : wave <= 5 ? WordBanks.classicMedium : WordBanks.classicMedium + WordBanks.classicLong
+        if rules == .firstContact {
+            pool = [RunRules.firstContactWords[wordsCleared % RunRules.firstContactWords.count]]
+        } else {
+            switch mode {
+            case .thumb: pool = WordBanks.thumb
+            case .layers: pool = random.unit() < 0.65 ? WordBanks.layers : WordBanks.thumb
+            case .classic:
+                pool = wave <= 2 ? WordBanks.classicShort + WordBanks.thumb.prefix(15)
+                    : wave <= 5 ? WordBanks.classicMedium : WordBanks.classicMedium + WordBanks.classicLong
+            }
         }
         let active = Set(targets.map(\.next))
         let unique = pool.filter { !active.contains(String($0.prefix(1))) }
         let word = choose(unique.isEmpty ? pool : unique)
         let x = max(65, min(325, (Double(dome) + 0.5) * 65 + random.unit() * 50 - 25))
         targets.append(Invader(id: nextID, word: word, x: x, y: -24,
-                               speed: 28 + min(Double(wave) * 4.5, 42) + random.unit() * 10 - 5, dome: dome))
+                               speed: rules == .firstContact ? 16 : 28 + min(Double(wave) * 4.5, 42) + random.unit() * 10 - 5, dome: dome))
         nextID += 1
     }
     private mutating func spawnUFO() {
@@ -261,7 +312,7 @@ struct GameEngine {
     }
 }
 
-private struct SeededRandom {
+private struct SeededRandom: Codable {
     var seed: UInt64
     mutating func next() -> UInt64 {
         seed &+= 0x9e3779b97f4a7c15

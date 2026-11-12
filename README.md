@@ -14,6 +14,9 @@ Minimum OS: **iOS / iPadOS 17**. Supports portrait and landscape, with a side-by
 
 ## Gameplay
 
+- **First Contact:** an introductory mission with eight short words, one slow target at a time, immediate optional key hints, and an optional 90% accuracy medal. A missed word returns until cleared. Completing the mission does not require the medal.
+- **Endless Defense:** the three original modes remain available below the mission card. Wave escalation and UFO bonuses apply to these modes.
+
 - **Thumb Rhythm:** the original alternating-thumb word bank, with cyan left-thumb and pink right-thumb keys.
 - **Arcade Waves:** short words first, then medium and longer words as waves advance.
 - **Layer Drills:** mixed letters, numbers and symbols, with immediate key hints.
@@ -22,13 +25,16 @@ Minimum OS: **iOS / iPadOS 17**. Supports portrait and landscape, with a side-by
 - Mistypes reset the combo and nudge a falling word down, but keep typed progress.
 - Correct keys score `10 × current combo`, with the combo capped at 25. A completed falling word adds `25 × word length`.
 - A completed UFO awards `250 × wave` and restores one shield point to the first damaged city, including a destroyed city.
-- Every eight cleared words/UFOs advances the wave. UFOs arrive every 14 seconds of active play.
+- In endless modes, every eight cleared words/UFOs advances the wave. UFOs arrive every 14 seconds of active play.
 - SPACE, backspace and LOCK NEXT cycle targets. ?123 / ABC switch touch-keyboard layers.
 - External keyboards: type normally; Space / Tab / Backspace cycle targets; Escape pauses/resumes; Enter starts/resumes.
 
 ## Native additions and deliberate differences
 
-- Local high scores per training mode; persistent sound, haptic and hint preferences.
+- Local endless high scores per training mode; mission scores are separate. Persistent sound, haptic and hint preferences.
+- Mission completion, accuracy medal and the most recent result are saved locally. Interrupted solo runs restore paused with their current word progress.
+- Atomic checkpoints save on start, word completion, impact, pause/background and every three active seconds. An abrupt force-quit can lose changes since the most recent checkpoint.
+- Results include score, words, arcade accuracy, touch/external-keyboard input source and a simple practice suggestion. They do not claim improvement on a standard typing assessment.
 - Native synthesized sound effects and haptics. Sound respects the silent switch and mixes with background music.
 - Automatic pause when the app becomes inactive. Resume is explicit; paused time never changes WPM or moves enemies.
 - A fixed logical playfield keeps reaction time consistent across screen sizes. Falling word labels are clamped inside the visible playfield.
@@ -73,12 +79,15 @@ xcodebuild -project LetterInvaders.xcodeproj -scheme LetterInvaders \
 
 ## Validation and remaining release work
 
-Validated on 11 November 2026 with Xcode 27.2:
+Validated on 12 November 2026 with Xcode 27.2:
 
-- 17 gameplay tests passed, including scoring, locks, UFO repair, pause, restart, hints and a full no-input game-over simulation.
-- iOS Simulator Debug build passed and the app installed/launched on the iPhone 17 simulator (iOS 27.2).
-- Unsigned Release build for physical iOS devices passed. Signing and physical-device installation were not performed.
-- Visual inspection and interactive simulator checks were blocked by the desktop control tool timing out. These are still required before calling the UI verified.
+- 25 core tests passed: the original 17 arcade regressions plus mission victory/loss/retry, input sources, partial-word recovery, saved rewards, corrupt saves, unsupported versions and failed-write recovery.
+- iOS Simulator Debug and unsigned physical-iOS Release builds passed.
+- Interactive iPhone 18 Pro simulator checks covered touch typing, portrait/landscape layouts, pause, process relaunch recovery, mission loss/retry, victory, medal display and persisted completion.
+- Fixed the bottom-row layout that hid MODE and LOCK NEXT. Hidden gameplay controls no longer appear in the menu's accessibility tree.
+- No physical iPhone was connected. Real two-thumb feel, audio/haptics, hardware keyboards, older OS versions, compact devices and full accessibility remain unverified.
+
+See [first-mission validation](docs/First-Mission-Validation.md), [run contracts](docs/Run-Contracts.md) and the [approved release plan](docs/Release-Plan.md).
 
 Before TestFlight or App Store distribution, test touch and external-keyboard controls, rotation, compact iPhones and iPads, audio, haptics, interruptions, and accessibility on actual devices. Configure signing, confirm final branding, and prepare the store listing and screenshots. This repository is a playable first native implementation, not an App Store submission.
 

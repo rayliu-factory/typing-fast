@@ -28,6 +28,7 @@ struct GameView: View {
                         .frame(height: min(300, max(228, geometry.size.height * 0.32)))
                 }
             }
+            .accessibilityHidden(model.engine.phase != .playing)
             .overlay {
                 if model.engine.phase != .playing { missionOverlay(wide: wide) }
             }
@@ -41,8 +42,8 @@ struct GameView: View {
             if phase != .active { model.pause() }
         }
         .sheet(isPresented: $showingSettings) { settings }
-        .confirmationDialog("End this run? Your best score is saved.", isPresented: $confirmingRestart, titleVisibility: .visible) {
-            Button("Return to mode selection", role: .destructive) { model.returnToMenu() }
+        .confirmationDialog("End this run? Completed missions and endless best scores are kept.", isPresented: $confirmingRestart, titleVisibility: .visible) {
+            Button("Return to mission menu", role: .destructive) { model.returnToMenu() }
         }
     }
 
@@ -64,7 +65,7 @@ struct GameView: View {
             HStack {
                 telemetry("SCORE", String(format: "%05d", model.engine.score), Palette.cyan)
                 Spacer()
-                telemetry("WAVE", String(format: "%02d", model.engine.wave), Palette.pink)
+                telemetry(model.engine.rules == .firstContact ? "WORDS" : "WAVE", model.engine.rules == .firstContact ? "\(model.engine.wordsCleared)/8" : String(format: "%02d", model.engine.wave), Palette.pink)
                 Spacer()
                 telemetry("WPM", "\(model.engine.wpm)", Palette.green)
                 Spacer()
@@ -88,7 +89,7 @@ struct GameView: View {
             CombatCanvas(model: model, reduceMotion: reduceMotion)
             HStack(spacing: 5) {
                 Circle().fill(Palette.green).frame(width: 4, height: 4)
-                Text(model.engine.mode.title.uppercased()).tracking(1.6)
+                Text((model.engine.rules == .firstContact ? "First Contact • 8 words" : model.engine.mode.title).uppercased()).tracking(1.6)
                 Spacer()
                 Image(systemName: "shield.lefthalf.filled")
                 Text("\(model.engine.shields.reduce(0, +))/18")
@@ -173,7 +174,9 @@ struct GameView: View {
                             .font(.system(size: 14)).foregroundStyle(Palette.muted).lineSpacing(4)
                     }
                     if model.engine.phase == .ready {
-                        VStack(spacing: 8) {
+                        missionCard
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("ENDLESS DEFENSE").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(Palette.muted)
                             ForEach(TrainingMode.allCases) { mode in modeCard(mode) }
                         }
                         HStack(spacing: 10) {
@@ -185,15 +188,21 @@ struct GameView: View {
                         HStack {
                             telemetry("SCORE", "\(model.engine.score)", Palette.cyan)
                             Spacer()
-                            telemetry("PEAK WPM", "\(model.engine.peakWPM)", Palette.green)
+                            telemetry("WORDS", "\(model.engine.wordsCleared)", Palette.green)
                             Spacer()
-                            telemetry("ACCURACY", "\(model.engine.accuracy)%", Palette.pink)
+                            telemetry("ACCURACY", model.engine.totalKeys == 0 ? "—" : "\(model.engine.accuracy)%", Palette.pink)
                         }.padding(18).background(Palette.panel, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    if let result = model.engine.result { resultInsight(result) }
+                    if let notice = model.saveNotice {
+                        Label(notice, systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 12)).foregroundStyle(Palette.amber)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     VStack(spacing: 12) {
                         Button { model.engine.phase == .paused ? model.resume() : model.start() } label: {
                             HStack {
-                                Text(model.engine.phase == .paused ? "RESUME DEFENSE" : model.engine.phase == .gameOver ? "PLAY AGAIN" : "LAUNCH DEFENSE")
+                                Text(primaryAction)
                                 Spacer()
                                 Image(systemName: "arrow.right")
                             }
@@ -203,20 +212,68 @@ struct GameView: View {
                         }.buttonStyle(.plain)
                         .accessibilityIdentifier("launchDefense")
                         if model.engine.phase != .ready {
-                            Button("CHOOSE TRAINING MODE") {
+                            Button("MISSION MENU") {
                                 if model.engine.phase == .paused { confirmingRestart = true }
                                 else { model.returnToMenu() }
                             }.font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(Palette.muted).padding(8)
                         }
-                        HStack {
-                            Text("BEST  \(String(format: "%05d", model.bestScore))")
-                            Spacer()
-                            Text("6 CITIES  /  1 MISSION")
-                        }.font(.system(size: 8, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(Palette.muted)
+                        if model.selectedRules == .endless {
+                            Text("ENDLESS BEST  \(String(format: "%05d", model.bestScore))")
+                                .font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundStyle(Palette.muted)
+                        } else if model.progress.firstContactCompleted {
+                            Label("FIRST CONTACT COMPLETE", systemImage: "checkmark.circle.fill")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(Palette.green)
+                        }
                     }
                 }.padding(28).frame(maxWidth: wide ? 700 : 500)
                     .frame(maxWidth: .infinity)
             }.defaultScrollAnchor(.center)
+        }
+    }
+    private var missionCard: some View {
+        let selected = model.selectedRules == .firstContact
+        return Button { model.selectMission() } label: {
+            HStack(spacing: 14) {
+                Image(systemName: model.progress.firstContactAccuracyMedal ? "medal.fill" : "paperplane.fill")
+                    .font(.system(size: 23)).foregroundStyle(Palette.green)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("FIRST CONTACT").font(.system(size: 14, weight: .bold))
+                    Text("Clear eight short words. One slow target at a time. Follow the highlighted keys.")
+                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    Text(model.progress.firstContactCompleted ? "Completed · Play again for practice" : "Start here · Protect your six cities")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.green)
+                }.multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? Palette.green : Palette.muted)
+            }.padding(18).background(Palette.green.opacity(selected ? 0.10 : 0.03), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.green.opacity(selected ? 0.7 : 0.2), lineWidth: 1))
+        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+    }
+    private func resultInsight(_ result: RunResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if result.rules == .firstContact {
+                Label(result.earnedAccuracyMedal ? "90% ACCURACY MEDAL EARNED" : "OPTIONAL MEDAL: 90% ACCURACY",
+                      systemImage: result.earnedAccuracyMedal ? "medal.fill" : "medal")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(result.earnedAccuracyMedal ? Palette.amber : Palette.muted)
+            }
+            Text(result.insight).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+            Text("Arcade accuracy: \(result.correctKeys) correct / \(result.totalKeys) letter taps. \(inputDescription(result))")
+                .font(.system(size: 11)).foregroundStyle(Palette.muted)
+            Text("These are game results, not a standard typing assessment.")
+                .font(.system(size: 11)).foregroundStyle(Palette.muted)
+        }.accessibilityIdentifier("runResult")
+    }
+    private func inputDescription(_ result: RunResult) -> String {
+        if result.inputSources.count > 1 { return "Touch + external keyboard." }
+        if result.inputSources.contains(.hardware) { return "External keyboard." }
+        return result.inputSources.isEmpty ? "No letter input recorded." : "Touch keyboard."
+    }
+    private var primaryAction: String {
+        switch model.engine.phase {
+        case .paused: return "RESUME RUN"
+        case .victory, .gameOver: return "PLAY AGAIN"
+        case .ready, .playing: return model.selectedRules == .firstContact ? "START FIRST CONTACT" : "LAUNCH ENDLESS DEFENSE"
         }
     }
     private var overlayTitle: String {
@@ -224,17 +281,19 @@ struct GameView: View {
         case .ready, .playing: return "WORDS FALL.\nTHUMBS FLY."
         case .paused: return "DEFENSE\nON HOLD."
         case .gameOver: return "SKYLINE\nBREACHED."
+        case .victory: return "FIRST CONTACT\nCOMPLETE."
         }
     }
     private var overlaySubtitle: String {
         switch model.engine.phase {
-        case .ready, .playing: return "A neon typing arcade. Find your rhythm. Defend the skyline."
-        case .paused: return "Take a breath. Your cities and your progress are safe while paused."
-        case .gameOver: return "All six cities have fallen. Reset the grid and find your next high score."
+        case .ready, .playing: return "Start with eight words. Find your rhythm. Then take on endless waves."
+        case .paused: return "\(model.engine.rules.title) is paused. Continue when you are ready."
+        case .gameOver: return "Your cities have fallen. Try again at your own pace."
+        case .victory: return "Eight words cleared. Your skyline is still standing."
         }
     }
     private func modeCard(_ mode: TrainingMode) -> some View {
-        let selected = model.engine.mode == mode
+        let selected = model.selectedRules == .endless && model.engine.mode == mode
         return Button { model.selectMode(mode) } label: {
             HStack(spacing: 14) {
                 Image(systemName: mode.symbol).font(.system(size: 21)).frame(width: 28).foregroundStyle(selected ? Palette.cyan : Palette.muted)
@@ -261,7 +320,7 @@ struct GameView: View {
                 Section("How to play") {
                     Text("Type the first letter to lock a target. Finish its word to destroy it. Mistakes reset your combo but keep your word progress.")
                     Text("SPACE, ⌫ and LOCK NEXT cycle targets. ?123 and ABC switch keyboard layers. UFOs award bonus points and restore one shield point, even to a fallen city.")
-                    Text("Hints light the next key when a word reaches the danger line. Layer Drills show hints immediately.")
+                    Text("First Contact ends after eight words. Hints appear immediately in First Contact and Layer Drills; other modes show them at the danger line.")
                 }
                 Section("External keyboard") {
                     Text("Type normally. Space, Tab and Backspace switch targets. Escape pauses or resumes; Enter starts or resumes a run.")
@@ -292,7 +351,6 @@ struct SoftKeyboard: View {
                     ForEach(row, id: \.self) { key in
                         KeyCap(key: key, model: model)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .layoutPriority(key == "SPACE" ? 1 : 0)
                     }
                 }.padding(.horizontal, rowIndex == 1 && model.layer == .letters ? 10 : 0)
             }
